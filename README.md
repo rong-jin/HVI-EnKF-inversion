@@ -2,6 +2,10 @@
 
 ## Overview
 
+This codebase corresponds to the implementation described in:
+
+- https://doi.org/10.1016/j.ijimpeng.2026.105738
+
 This repository contains an integration-ready **Parallel LS-DYNA + EnKF inversion** workflow:
 
 - Main workflow: `hvi_enkf_main.py`
@@ -61,6 +65,17 @@ EnKF-for-Material-Model-Characterization/
 │  └─ z_displ_true_array.txt
 └─ Ensemble_01 ... Ensemble_XX/   (created at runtime)
 ```
+
+---
+
+## Platform note
+
+Current `LS-DYNA` invocation (`run_lsdyna_solver`) is configured for **Windows** execution, using:
+
+- `--lsdyna-bat` (ANSYS/LS-Run environment batch file)
+- `--lsdyna-solver` (Windows LS-DYNA executable path)
+
+If you run on Linux/HPC, replace the command launcher in `lsdyna_io.py` accordingly.
 
 ---
 

@@ -126,17 +126,29 @@ def apply_parameter_dispersion_recovery(
     return out
 
 
+
+
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run parallel LS-DYNA + EnKF inversion")
+    # Defaults are Windows-oriented so `python hvi_enkf_main.py` can run directly.
     parser.add_argument("--project-root", default=".")
-    parser.add_argument("--lsdyna-bat", required=True)
-    parser.add_argument("--lsdyna-solver", required=True)
+    parser.add_argument(
+        "--lsdyna-bat",
+        default=r"C:\Program Files\ANSYS Inc\v251\ansys\bin\winx64\lsprepost412\LS-Run\lsdynamsvar.bat",
+    )
+    parser.add_argument(
+        "--lsdyna-solver",
+        default=r"C:\Program Files\ANSYS Inc\v251\ansys\bin\winx64\lsdyna_dp.exe",
+    )
     args = parser.parse_args()
 
     cfg = EnKFConfig()
     root = os.path.abspath(args.project_root)
 
     with Tee(os.path.join(root, "terminal.txt")):
+        obs_path = os.path.join(root, "Observation", "z_displ_true_array.txt")
         t0 = time.time()
         rng = np.random.default_rng(cfg.seed)
 
@@ -169,7 +181,7 @@ def main() -> None:
             k_out = os.path.join(ens_dir, f"Run_ensemble_{eid:02d}.k")
             modify_k_file_material_parameters(orig_k, k_out, eid, cfg.pred_idx, [f"{ens_params_full[eid-1, j]:.3e}" for j in range(n_par)])
 
-        obs_mean = np.loadtxt(os.path.join(root, "Observation", "z_displ_true_array.txt"), delimiter=",") - 1e-4
+        obs_mean = np.loadtxt(obs_path, delimiter=",") - 1e-4
         assert obs_mean.size == cfg.n_step * cfg.n_obs
 
         h = np.zeros((cfg.n_step * cfg.n_obs, cfg.n_step * cfg.n_pts + n_par))
@@ -255,11 +267,6 @@ def main() -> None:
                 modify_k_file_material_parameters(k_path, k_path, eid, cfg.pred_idx, [f"{ens_params_full[eid-1, j]:.3e}" for j in range(n_par)])
 
         print(f"Total wall-time: {(time.time() - t0) / 60:.2f} min")
-
-
-if __name__ == "__main__":
-    main()
-
 
 
 if __name__ == "__main__":

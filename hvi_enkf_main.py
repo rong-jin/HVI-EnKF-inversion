@@ -1,11 +1,7 @@
-"""Parallel LS-DYNA + EnKF pipeline template.
+"""Parallel LS-DYNA + EnKF inversion pipeline.
 
-This module is a cleaned integration version of the user-provided script with:
-- structured configuration (dataclass)
-- reusable helpers
-- CLI entry point
-
-It is intentionally solver-path configurable and safe for repository integration.
+Default covariance inflation is RTPS.
+Optional parameter rejuvenation can be enabled by config.
 """
 
 from __future__ import annotations
@@ -13,16 +9,19 @@ from __future__ import annotations
 import argparse
 import glob
 import os
-import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Iterable
 
 import matplotlib
 import numpy as np
+
+from lsdyna_io import (
+    extract_z_disp_observation_array,
+    modify_k_file_material_parameters,
+    run_lsdyna_solver,
+)
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -66,88 +65,65 @@ class EnKFConfig:
     sigma_obs: float = 1e-3
     seed: int = 42
     timeout_sec: int = 3000
+    inflation_method: str = "rtps"  # rtps | none
+    rtps_alpha: float = 0.7
+    enable_rejuvenation: bool = False
+    rejuv_threshold: float = 1.5
+    rejuv_scale_max: float = 3.0
 
 
-def modify_k_file_mat_parameters_general(
-    input_file: str,
-    output_file: str,
-    case_id: int,
-    predicted_indices: Iterable[int],
-    predicted_values: Iterable[str],
-) -> None:
-    labels = ["RA1", "RB1", "Rn1", "RC1", "Rm1", "RD11", "RD21", "RD31", "RD41", "RD51", "RCS", "RS1", "RG", "RA0"]
-    with open(input_file, "r", encoding="utf-8") as fh:
-        lines = fh.readlines()
-    if len(lines) < 21:
-        raise ValueError(f"{input_file} has insufficient lines.")
+def apply_covariance_inflation(
+    x_f: np.ndarray,
+    x_a: np.ndarray,
+    parameter_cols: np.ndarray,
+    method: str,
+    rtps_alpha: float,
+) -> np.ndarray:
+    """Apply covariance inflation to selected parameter columns (default RTPS)."""
+    if method == "none":
+        return x_a
+    if method != "rtps":
+        raise ValueError(f"Unsupported inflation method: {method}")
 
-    for idx, val in zip(predicted_indices, predicted_values):
-        lines[7 + idx] = f"{labels[idx]},{val}\n"
+    xa_bar = x_a.mean(axis=0)
+    xf_bar = x_f.mean(axis=0)
+    a_a = x_a - xa_bar
+    a_f = x_f - xf_bar
 
-    with open(output_file, "w", encoding="utf-8") as fh:
-        fh.writelines(lines)
-    print(f"[E{case_id:02d}] k-file updated: {output_file}")
+    sigma_b = np.std(a_f[:, parameter_cols], axis=0, ddof=1)
+    sigma_a = np.std(a_a[:, parameter_cols], axis=0, ddof=1)
+    alpha = 1.0 + rtps_alpha * (sigma_b - sigma_a) / np.maximum(sigma_a, 1e-12)
+    alpha = np.clip(alpha, 1.0, 1.2)
 
-
-def run_lsdyna(input_file: str, cfg: EnKFConfig, cwd: str, bat_path: str, solver_path: str) -> None:
-    k_name = Path(input_file).name
-    tag = Path(cwd).name
-    print(f"{tag} starts – solver launching ...")
-    cmd = f'"{bat_path}" && "{solver_path}" i="{k_name}" ncpu={cfg.lsdyna_ncpu} memory={cfg.lsdyna_memory}'
-
-    res = subprocess.run(
-        cmd,
-        shell=True,
-        cwd=cwd,
-        text=True,
-        capture_output=True,
-        timeout=cfg.timeout_sec,
-    )
-    if res.returncode != 0:
-        tail_src = (res.stderr or res.stdout or "").strip().splitlines()
-        tail = "\n".join(tail_src[-20:] if tail_src else ["<no output>"])
-        raise RuntimeError(f"LS-DYNA failed in {tag}, code={res.returncode}\n{tail}")
-    print(f"LS-DYNA OK — {tag}")
+    a_a[:, parameter_cols] *= alpha
+    return xa_bar + a_a
 
 
-def process_nodout_data(nodout_file_path: str, out_array_file: str, *, n_step: int, n_extract: int, node_num: int = 54, total_time: float = 1.2e-5, start_rt_value: float = 1e-5, rt_step: float = 0.1e-5) -> np.ndarray:
-    # minimal extraction: keep compatibility with original fixed-width parser
-    fields = ["nodal_point", "x_disp", "y_disp", "z_disp", "x_vel", "y_vel", "z_vel", "x_accl", "y_accl", "z_accl", "x_coor", "y_coor", "z_coor"]
-    idx = fields.index("z_disp")
-    start_idx = 10 + (idx - 1) * 12
-    end_idx = start_idx + 12
+def apply_parameter_dispersion_recovery(
+    x_a: np.ndarray,
+    parameter_cols: np.ndarray,
+    bounds: dict[int, tuple[float, float]],
+    pred_idx: tuple[int, ...],
+    misfit_j: float,
+    threshold_j: float,
+    scale_max: float,
+) -> np.ndarray:
+    """Optional multiplicative parameter rejuvenation step."""
+    if misfit_j <= threshold_j:
+        return x_a
 
-    with open(nodout_file_path, "r", encoding="utf-8") as f:
-        lines = f.readlines()
+    xbar = x_a.mean(axis=0)
+    a = x_a - xbar
+    sd = np.std(a[:, parameter_cols], axis=0, ddof=1)
+    target_sd = np.maximum(sd * 1.2, 1e-12)
+    scale = np.clip(target_sd / np.maximum(sd, 1e-12), 1.0, scale_max)
+    a[:, parameter_cols] *= scale
+    out = xbar + a
 
-    start_line, line_offset, range_length = 68, 60, 54
-    zvals: list[float] = []
-    while start_line + range_length - 1 <= len(lines):
-        for i in range(start_line - 1, start_line + range_length - 1):
-            raw = lines[i][start_idx:end_idx].strip()
-            if "e" not in raw.lower():
-                for j in range(1, len(raw)):
-                    if raw[j] in ["+", "-"]:
-                        raw = f"{raw[:j]}e{raw[j:]}"
-                        break
-            zvals.append(float(raw))
-        start_line += line_offset
-
-    group_size = node_num
-    num_groups = len(zvals) // group_size
-    dt = total_time if num_groups < 2 else total_time / (num_groups - 1)
-    start_gid = int(round(start_rt_value / dt))
-    step_gid = int(round(rt_step / dt))
-
-    picked: list[float] = []
-    for g in range(n_step):
-        gid = start_gid + g * step_gid
-        s = gid * group_size
-        picked.extend(zvals[s : s + n_extract])
-
-    arr = np.asarray(picked, dtype=float)
-    np.savetxt(out_array_file, arr.reshape(1, -1), delimiter=",", fmt="%.6e")
-    return arr
+    for jj, idxp in enumerate(pred_idx):
+        lo, hi = bounds[idxp]
+        out[:, parameter_cols[jj]] = np.clip(out[:, parameter_cols[jj]], lo, hi)
+    return out
 
 
 def main() -> None:
@@ -169,6 +145,8 @@ def main() -> None:
         cv_target = np.array([0.0617, 0.0784, 0.0823], dtype=float)
 
         n_par = len(cfg.pred_idx)
+        param_cols = np.array([-n_par, -n_par + 1, -1], dtype=int)
+
         ens_mean = np.array([init_guess[i] for i in cfg.pred_idx], dtype=float)
         ens_params_full = np.empty((cfg.n_ens, n_par), dtype=float)
         for j, idx in enumerate(cfg.pred_idx):
@@ -189,10 +167,14 @@ def main() -> None:
             ens_dir = os.path.join(root, f"Ensemble_{eid:02d}")
             os.makedirs(ens_dir, exist_ok=True)
             k_out = os.path.join(ens_dir, f"Run_ensemble_{eid:02d}.k")
-            modify_k_file_mat_parameters_general(orig_k, k_out, eid, cfg.pred_idx, [f"{ens_params_full[eid-1, j]:.3e}" for j in range(n_par)])
+            modify_k_file_material_parameters(orig_k, k_out, eid, cfg.pred_idx, [f"{ens_params_full[eid-1, j]:.3e}" for j in range(n_par)])
 
         obs_mean = np.loadtxt(os.path.join(root, "Observation", "z_displ_true_array.txt"), delimiter=",") - 1e-4
         assert obs_mean.size == cfg.n_step * cfg.n_obs
+
+        h = np.zeros((cfg.n_step * cfg.n_obs, cfg.n_step * cfg.n_pts + n_par))
+        for k in range(cfg.n_step):
+            h[k * cfg.n_obs : (k + 1) * cfg.n_obs, k * cfg.n_pts : k * cfg.n_pts + cfg.n_obs] = np.eye(cfg.n_obs)
 
         for iter_idx in range(1, cfg.n_iter + 1):
             print(f"\n==== Iter {iter_idx} ====")
@@ -200,9 +182,22 @@ def main() -> None:
             def simulate_and_extract(eid: int):
                 ens_dir = os.path.join(root, f"Ensemble_{eid:02d}")
                 k_file = os.path.join(ens_dir, f"Run_ensemble_{eid:02d}.k")
-                run_lsdyna(k_file, cfg, ens_dir, args.lsdyna_bat, args.lsdyna_solver)
+                run_lsdyna_solver(
+                    input_file=k_file,
+                    cwd=ens_dir,
+                    ncpu=cfg.lsdyna_ncpu,
+                    memory=cfg.lsdyna_memory,
+                    timeout_sec=cfg.timeout_sec,
+                    bat_path=args.lsdyna_bat,
+                    solver_path=args.lsdyna_solver,
+                )
                 z_out = os.path.join(ens_dir, f"z_disp_{eid:02d}_{iter_idx:02d}.txt")
-                w_val = process_nodout_data(os.path.join(ens_dir, "nodout"), z_out, n_step=cfg.n_step, n_extract=cfg.n_pts)
+                w_val = extract_z_disp_observation_array(
+                    os.path.join(ens_dir, "nodout"),
+                    z_out,
+                    n_step=cfg.n_step,
+                    n_extract=cfg.n_pts,
+                )
                 for fp in glob.glob(os.path.join(ens_dir, "d3*")):
                     try:
                         os.remove(fp)
@@ -222,10 +217,6 @@ def main() -> None:
             ens_params_ok = ens_params_full[ok_mask, :]
             x_f = np.hstack((ens_w_ok, ens_params_ok))
 
-            h = np.zeros((cfg.n_step * cfg.n_obs, cfg.n_step * cfg.n_pts + n_par))
-            for k in range(cfg.n_step):
-                h[k * cfg.n_obs : (k + 1) * cfg.n_obs, k * cfg.n_pts : k * cfg.n_pts + cfg.n_obs] = np.eye(cfg.n_obs)
-
             x_bar = x_f.mean(axis=0)
             a = x_f - x_bar
             p_xx = (a.T @ a) / (x_f.shape[0] - 1)
@@ -233,13 +224,42 @@ def main() -> None:
             r_yy = np.eye(cfg.n_step * cfg.n_obs) * (cfg.sigma_obs**2)
             k_gain = p_xx @ h.T @ np.linalg.inv(h @ p_xx @ h.T + r_yy)
             x_a = x_f + (k_gain @ innovation).T
+
+            x_a = apply_covariance_inflation(
+                x_f=x_f,
+                x_a=x_a,
+                parameter_cols=param_cols,
+                method=cfg.inflation_method,
+                rtps_alpha=cfg.rtps_alpha,
+            )
+
+            yhat = (h @ x_a.mean(axis=0).reshape(-1, 1)).reshape(-1)
+            residual = obs_mean.reshape(-1) - yhat
+            j_now = (residual @ residual) / (obs_mean.size * cfg.sigma_obs**2)
+
+            if cfg.enable_rejuvenation:
+                x_a = apply_parameter_dispersion_recovery(
+                    x_a=x_a,
+                    parameter_cols=param_cols,
+                    bounds=bounds,
+                    pred_idx=cfg.pred_idx,
+                    misfit_j=j_now,
+                    threshold_j=cfg.rejuv_threshold,
+                    scale_max=cfg.rejuv_scale_max,
+                )
+
             ens_params_full[ok_mask, :] = x_a[:, -n_par:]
 
             for eid in range(1, cfg.n_ens + 1):
                 k_path = os.path.join(root, f"Ensemble_{eid:02d}", f"Run_ensemble_{eid:02d}.k")
-                modify_k_file_mat_parameters_general(k_path, k_path, eid, cfg.pred_idx, [f"{ens_params_full[eid-1, j]:.3e}" for j in range(n_par)])
+                modify_k_file_material_parameters(k_path, k_path, eid, cfg.pred_idx, [f"{ens_params_full[eid-1, j]:.3e}" for j in range(n_par)])
 
         print(f"Total wall-time: {(time.time() - t0) / 60:.2f} min")
+
+
+if __name__ == "__main__":
+    main()
+
 
 
 if __name__ == "__main__":

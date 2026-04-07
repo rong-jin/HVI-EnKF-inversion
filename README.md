@@ -81,8 +81,19 @@ If you run on Linux/HPC, replace the command launcher in `lsdyna_io.py` accordin
 
 ## Run command
 
+Default run (uses built-in Windows defaults for `project-root`, `lsdyna-bat`, and `lsdyna-solver`):
+
 ```bash
-python hvi_enkf_main.py --project-root . --lsdyna-bat "C:\Program Files\ANSYS Inc\v251\ansys\bin\winx64\lsprepost412\LS-Run\lsdynamsvar.bat" --lsdyna-solver "C:\Program Files\ANSYS Inc\v251\ansys\bin\winx64\lsdyna_dp.exe"
+python hvi_enkf_main.py
+```
+
+Equivalent explicit run:
+
+```bash
+python hvi_enkf_main.py \
+  --project-root . \
+  --lsdyna-bat "C:\Program Files\ANSYS Inc\v251\ansys\bin\winx64\lsprepost412\LS-Run\lsdynamsvar.bat" \
+  --lsdyna-solver "C:\Program Files\ANSYS Inc\v251\ansys\bin\winx64\lsdyna_dp.exe"
 ```
 
 ---
@@ -98,3 +109,41 @@ Default configuration in `EnKFConfig`:
 You can enable rejuvenation by setting:
 
 - `enable_rejuvenation = True`
+
+
+---
+
+
+---
+
+
+---
+
+## Observation generation and EnKF integration
+
+Observation preparation is now executed by an external script, while `hvi_enkf_main.py` remains focused on EnKF inversion.
+
+1. **Prepare observation from baseline k-file**
+
+```bash
+python prepare_observation.py --baseline-k Run.k
+```
+
+This generates:
+
+- `Observation/z_displ_true_array.txt`
+
+2. **Run EnKF inversion (main pipeline)**
+
+```bash
+python hvi_enkf_main.py
+```
+
+
+---
+
+## k-file parameter update rule
+
+`modify_k_file_material_parameters(...)` now updates parameter lines by **parameter name matching** (e.g., `RC1`, `RD41`, `RG`) rather than fixed line numbers.
+
+So changes in header/comment line count will not break parameter replacement, as long as target parameter names still exist in the k-file.

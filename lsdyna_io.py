@@ -17,21 +17,40 @@ def modify_k_file_material_parameters(
     predicted_indices: Iterable[int],
     predicted_values: Iterable[str],
 ) -> None:
-    """Update selected material parameter rows in a LS-DYNA .k file."""
+    """Update selected material parameters in a LS-DYNA .k file by parameter name.
+
+    This is robust to header/comment line count changes because it does not rely on
+    fixed line numbers.
+    """
     labels = ["RA1", "RB1", "Rn1", "RC1", "Rm1", "RD11", "RD21", "RD31", "RD41", "RD51", "RCS", "RS1", "RG", "RA0"]
+    updates = {labels[idx]: val for idx, val in zip(predicted_indices, predicted_values)}
+
     with open(input_file, "r", encoding="utf-8") as fh:
         lines = fh.readlines()
 
-    if len(lines) < 21:
-        raise ValueError(f"{input_file} has insufficient lines (< 21).")
+    found = {k: False for k in updates}
+    out_lines: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("$") or "," not in line:
+            out_lines.append(line)
+            continue
 
-    for idx, val in zip(predicted_indices, predicted_values):
-        lines[7 + idx] = f"{labels[idx]},{val}\n"
+        key = stripped.split(",", 1)[0].strip()
+        if key in updates:
+            out_lines.append(f"{key},{updates[key]}\n")
+            found[key] = True
+        else:
+            out_lines.append(line)
+
+    missing = [k for k, v in found.items() if not v]
+    if missing:
+        raise ValueError(f"Missing parameters in k-file {input_file}: {missing}")
 
     with open(output_file, "w", encoding="utf-8") as fh:
-        fh.writelines(lines)
+        fh.writelines(out_lines)
 
-    print(f"[E{case_id:02d}] k-file updated: {output_file}")
+    print(f"[E{case_id:02d}] k-file updated by-name: {output_file}")
 
 
 def run_lsdyna_solver(

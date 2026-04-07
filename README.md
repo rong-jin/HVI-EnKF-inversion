@@ -56,9 +56,9 @@ The full material-modeling framework discussed in the paper includes:
 
 For the reduced-dimensional calibration setting implemented here, the unknown parameter vector is:
 
-\[
+$$
 \mathbf{u} = [C,\; D4,\; \gamma_0]^T
-\]
+$$
 
 where:
 
@@ -118,18 +118,18 @@ This repository follows an **artificial-time EnKF inversion** strategy. Instead 
 
 The augmented state is written as
 
-\[
+$$
 \mathbf{x} =
 \begin{bmatrix}
 \mathbf{G}(\mathbf{u}) \\
 \mathbf{u}
 \end{bmatrix},
-\]
+$$
 
 where:
 
-- \(\mathbf{u}\) is the parameter vector,
-- \(\mathbf{G}(\mathbf{u})\) is the simulated observation vector,
+- $\mathbf{u}$ is the parameter vector,
+- $\mathbf{G}(\mathbf{u})$ is the simulated observation vector,
 - the observation operator extracts the observation portion of the state.
 
 At every iteration, the workflow:

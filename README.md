@@ -11,7 +11,22 @@ The implementation is based on the methodology reported in:
 > **International Journal of Impact Engineering**, 215 (2026), 105738  
 > DOI: https://doi.org/10.1016/j.ijimpeng.2026.105738
 
-The framework is designed for **non-intrusive Bayesian-style inversion** of computationally expensive black-box simulators. In the present repository, LS-DYNA is treated as the forward model, while the EnKF iteratively updates an ensemble of material parameters using simulated observations extracted from `nodout`.
+The framework is designed for **non-intrusive inverse calibration** of computationally expensive black-box simulators. In the present repository, LS-DYNA is treated as the forward model, while the EnKF iteratively updates an ensemble of material parameters using simulated observations extracted from `nodout`.
+
+---
+
+## Relation to the published paper
+
+The published paper presents the broader EnKF–SPH methodology, including RTPS covariance inflation, a rejuvenation strategy for extreme prior bias, and numerical studies on synthetic HVI observations.
+
+This repository implements the same overall inversion structure, but the **code should be understood as a practical research implementation rather than a line-by-line reproduction of every equation in the paper**. In particular:
+
+- the default inversion targets the reduced three-parameter set \([C,\;D4,\;\gamma_0]\),
+- the current code uses a **deterministic observation vector** in the analysis step,
+- the optional `enable_rejuvenation` branch implements a **lightweight dispersion-recovery mechanism triggered by normalized misfit**, rather than the full multi-condition trigger logic described in the paper,
+- the default repository setting is `sigma_obs = 1e-3`, which should be treated as a configurable code parameter.
+
+These choices are intended to keep the workflow compact, stable, and easy to adapt.
 
 ---
 
@@ -25,7 +40,7 @@ The current implementation follows the published study in which:
 - the observable is **time-series back-face deflection**,
 - the inverse method is the **Ensemble Kalman Filter**,
 - **covariance inflation** is used to avoid filter overconfidence, and
-- an optional **parameter rejuvenation** mechanism is provided to recover from extreme prior bias.
+- an optional **parameter-spread recovery mechanism** is available for difficult prior settings.
 
 Because the EnKF uses only ensemble statistics and does not require tangent or adjoint operators, it is particularly suitable for expensive black-box HVI simulations.
 
@@ -164,6 +179,8 @@ The current setup assumes:
 - 20 retained observation points per time,
 - total length = 60.
 
+In the forward model, the code extracts `n_pts = 54` values per selected time step and then applies the observation operator to retain the first `n_obs = 20` values from each time block.
+
 ---
 
 ### 4. Covariance inflation
@@ -179,7 +196,7 @@ Inflation is applied only to the selected parameter columns.
 
 ---
 
-### 5. Optional parameter rejuvenation
+### 5. Optional parameter dispersion recovery
 
 A parameter-dispersion recovery step is implemented and can be enabled when needed. This mechanism is intended for difficult cases where:
 
@@ -187,7 +204,7 @@ A parameter-dispersion recovery step is implemented and can be enabled when need
 - the ensemble variance collapses too early,
 - the predicted response remains inconsistent with the observation.
 
-In the present codebase, rejuvenation is **disabled by default** but can be activated in `EnKFConfig`.
+In the present codebase, rejuvenation is **disabled by default** and is activated only when the normalized misfit exceeds a user-defined threshold.
 
 ---
 
@@ -374,7 +391,7 @@ Recommended environment:
 Install the Python dependencies with:
 
 ```bash
-pip install numpy matplotlib
+pip install -r requirements.txt
 ```
 
 In addition, a valid LS-DYNA installation is required.
@@ -469,6 +486,8 @@ If you use this repository in academic work, please cite:
   doi     = {10.1016/j.ijimpeng.2026.105738}
 }
 ```
+
+See also `CITATION.cff` for GitHub-compatible citation metadata.
 
 ---
 

@@ -1,5 +1,4 @@
-# EnKF-for-Material-Model-Characterization
-
+# Ensemble-based data assimilation for material model characterization in high-velocity impact
 ## Overview
 
 This codebase corresponds to the implementation described in:

@@ -21,7 +21,7 @@ The published paper presents the broader EnKF–SPH methodology, including RTPS 
 
 This repository implements the same overall inversion structure, but the **code should be understood as a practical research implementation rather than a line-by-line reproduction of every equation in the paper**. In particular:
 
-- the default inversion targets the reduced three-parameter set \([C,\;D4,\;\gamma_0]\),
+- the default inversion targets the reduced three-parameter set $[C,\;D4,\;\gamma_0]$,
 - the current code uses a **deterministic observation vector** in the analysis step,
 - the optional `enable_rejuvenation` branch implements a **lightweight dispersion-recovery mechanism triggered by normalized misfit**, rather than the full multi-condition trigger logic described in the paper,
 - the default repository setting is `sigma_obs = 1e-3`, which should be treated as a configurable code parameter.

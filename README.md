@@ -82,10 +82,7 @@ If you run on Linux/HPC, replace the command launcher in `lsdyna_io.py` accordin
 ## Run command
 
 ```bash
-python hvi_enkf_main.py \
-  --project-root . \
-  --lsdyna-bat "C:\Program Files\ANSYS Inc\v251\ansys\bin\winx64\lsprepost412\LS-Run\lsdynamsvar.bat" \
-  --lsdyna-solver "C:\Program Files\ANSYS Inc\v251\ansys\bin\winx64\lsdyna_dp.exe"
+python hvi_enkf_main.py --project-root . --lsdyna-bat "C:\Program Files\ANSYS Inc\v251\ansys\bin\winx64\lsprepost412\LS-Run\lsdynamsvar.bat" --lsdyna-solver "C:\Program Files\ANSYS Inc\v251\ansys\bin\winx64\lsdyna_dp.exe"
 ```
 
 ---

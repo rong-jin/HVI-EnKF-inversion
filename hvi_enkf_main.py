@@ -61,7 +61,7 @@ class Tee:
         self._file.close()
 
 class EnKFConfig:
-    n_iter: int = 3
+    n_iter: int = 20
     n_ens: int = 100
     n_step: int = 3
     n_obs: int = 20

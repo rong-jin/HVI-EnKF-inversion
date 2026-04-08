@@ -19,65 +19,82 @@ The framework is designed for **non-intrusive inverse calibration** of computati
 
 The published paper presents the broader EnKF–SPH methodology, including RTPS covariance inflation, a rejuvenation strategy for extreme prior bias, and numerical studies on synthetic HVI observations.
 
-This repository implements the same overall inversion structure, but the **code should be understood as a practical research implementation rather than a line-by-line reproduction of every equation in the paper**. In particular:
+This repository implements the same overall inversion structure, but the code should be understood as a **practical research implementation** rather than a line-by-line transcription of every equation in the paper. The present version is aligned with the published HVI setup in the following ways:
 
-- the default inversion targets the reduced three-parameter set $[C,\;D4,\;\gamma_0]$,
-- the current code uses a **deterministic observation vector** in the analysis step,
-- the optional `enable_rejuvenation` branch implements a **lightweight dispersion-recovery mechanism triggered by normalized misfit**, rather than the full multi-condition trigger logic described in the paper,
-- the default repository setting is `sigma_obs = 1e-3`, which should be treated as a configurable code parameter.
-
-These choices are intended to keep the workflow compact, stable, and easy to adapt.
-
----
-
-## Scientific Background
-
-Accurate simulation of HVI events requires reliable constitutive, fracture, and volumetric material models. In practice, these models often contain parameters that are difficult to determine uniquely from conventional experiments and are therefore tuned manually. This repository implements an alternative approach in which simulation outputs are assimilated against observation data using an ensemble-based inverse framework.
-
-The current implementation follows the published study in which:
-
-- the forward solver is an **SPH model in LS-DYNA**,
-- the observable is **time-series back-face deflection**,
-- the inverse method is the **Ensemble Kalman Filter**,
-- **covariance inflation** is used to avoid filter overconfidence, and
-- an optional **parameter-spread recovery mechanism** is available for difficult prior settings.
-
-Because the EnKF uses only ensemble statistics and does not require tangent or adjoint operators, it is particularly suitable for expensive black-box HVI simulations.
+- the reduced inversion targets the three-parameter set $[C,\;D4,\;\gamma_0]$,
+- the forward model extracts back-face `z_disp` from `nodout`,
+- the default observation times correspond to **10.0, 11.0, and 12.0 $\mu$s**,
+- the code now supports **paper-style Case 1–4 switching** through a `--case` argument,
+- the history outputs written by the older internal script are restored under `history_value/`.
 
 ---
 
-## Scope of the Current Repository
+## Scope of the current repository
 
 The full material-modeling framework discussed in the paper includes:
 
 - Johnson–Cook plasticity,
-- Johnson–Cook fracture, and
+- Johnson–Cook fracture,
 - Mie–Grüneisen EOS.
 
-For the reduced-dimensional calibration setting implemented here, the unknown parameter vector is:
+For the reduced-dimensional calibration setting implemented here, the unknown parameter vector is
 
 $$
-\mathbf{u} = [C,\; D4,\; \gamma_0]^T
+\mathbf{u} = [C,\; D4,\; \gamma_0]^T.
 $$
 
-where:
+Here:
 
 - `C` is the Johnson–Cook strain-rate sensitivity coefficient,
-- `D4` is a Johnson–Cook fracture parameter, and
-- `RG` in the LS-DYNA keyword file corresponds to the Grüneisen parameter `γ0`.
+- `D4` is a Johnson–Cook fracture parameter,
+- `RG` in the LS-DYNA keyword file corresponds to the Grüneisen parameter $\gamma_0$.
 
-All remaining material parameters are kept fixed.
-
-The default observation setting is:
-
-- `n_step = 3` observation times,
-- `n_obs = 20` observed nodes per time,
-- `n_pts = 54` extracted nodes per forward run,
-- total observation dimension \(N_y = 3 \times 20 = 60\).
+All remaining material parameters are held fixed.
 
 ---
 
-## Repository Structure
+## Observation definition
+
+### Selected node set
+
+The numerical workflow distinguishes between:
+
+- **extracted forward nodes**: `n_pts = 54`
+- **assimilated observation nodes per time**: `n_obs = 20` by default
+
+This means that each LS-DYNA forward run first extracts **54 back-face nodes** at each selected time step, and the EnKF observation operator then retains the first `n_obs` entries from each time block for data assimilation.
+
+In the published paper, the standard observation configuration uses:
+
+- `n_step = 3`
+- `n_obs = 20`
+- total observation dimension $N_y = 3 \times 20 = 60$
+
+The reduced-data case uses:
+
+- `n_step = 3`
+- `n_obs = 10`
+- total observation dimension $N_y = 30$
+
+### Selected time steps
+
+The current code extracts back-face displacement at three physical times:
+
+- `10.0 μs`
+- `11.0 μs`
+- `12.0 μs`
+
+In the scripts, this is represented by:
+
+- `total_time = 1.2e-5`
+- `obs_start_time = 1.0e-5`
+- `obs_time_step = 1.0e-6`
+
+The parser computes the corresponding `nodout` block indices automatically from the total number of detected output blocks, which reproduces the behavior of the older internal script while keeping the new header-driven parsing.
+
+---
+
+## Repository structure
 
 ```text
 .
@@ -88,13 +105,14 @@ The default observation setting is:
 ├─ MAT.txt
 ├─ Observation/
 │  └─ z_displ_true_array.txt
-└─ Ensemble_01 ... Ensemble_XX/    # created automatically at runtime
+├─ history_value/                 # generated at runtime
+└─ Ensemble_01 ... Ensemble_XX/   # generated at runtime
 ```
 
 ### Main files
 
 - **`hvi_enkf_main.py`**  
-  Main EnKF inversion driver. Handles ensemble initialization, parallel forward simulation, state update, covariance inflation, optional rejuvenation, and iterative rewriting of posterior parameters to ensemble-specific `.k` files.
+  Main EnKF inversion driver. Handles ensemble initialization, paper-case selection, parallel forward simulation, EnKF update, covariance inflation, optional rejuvenation, history output, and iterative rewriting of posterior parameters to ensemble-specific `.k` files.
 
 - **`lsdyna_io.py`**  
   External callable utilities for LS-DYNA I/O, including keyword-file parameter replacement, solver invocation, and robust `nodout` parsing.
@@ -116,7 +134,7 @@ The default observation setting is:
 
 This repository follows an **artificial-time EnKF inversion** strategy. Instead of assimilating data sequentially in physical time, each EnKF iteration uses the complete observation vector from a single HVI event.
 
-The augmented state is written as
+The augmented state is
 
 $$
 \mathbf{x} =
@@ -142,73 +160,22 @@ At every iteration, the workflow:
 6. applies inflation or rejuvenation if needed,
 7. writes updated parameters back to LS-DYNA keyword files.
 
----
-
 ### 2. Parallel forward simulation
 
 The most expensive step is the forecast stage, in which a full LS-DYNA simulation is run for each ensemble member. The current implementation parallelizes these forward solves across ensemble directories using Python's `ThreadPoolExecutor`.
 
-Each ensemble member is stored in its own subdirectory:
+### 3. Covariance inflation and optional rejuvenation
 
-```text
-Ensemble_01/
-Ensemble_02/
-...
-Ensemble_100/
-```
-
-and contains its own updated LS-DYNA keyword file.
-
----
-
-### 3. Observation extraction
-
-The observable used in the current workflow is the flattened array of **back-face `z_disp` values** extracted from `nodout`.
-
-The observation file is stored as:
-
-```text
-Observation/z_displ_true_array.txt
-```
-
-and is written as a single comma-separated row vector.
-
-The current setup assumes:
-
-- 3 observation times,
-- 20 retained observation points per time,
-- total length = 60.
-
-In the forward model, the code extracts `n_pts = 54` values per selected time step and then applies the observation operator to retain the first `n_obs = 20` values from each time block.
-
----
-
-### 4. Covariance inflation
-
-The default covariance-inflation method is **RTPS** (Relaxation-to-Prior-Spread). This is used to mitigate ensemble under-dispersion after the EnKF analysis step.
-
-The current default settings are:
+The default covariance-inflation method is **RTPS** (Relaxation-to-Prior-Spread), with:
 
 - `inflation_method = "rtps"`
 - `rtps_alpha = 0.7`
 
-Inflation is applied only to the selected parameter columns.
+A parameter-dispersion recovery step is also implemented and may be enabled for strongly biased cases. In the paper-aligned case settings, rejuvenation is enabled by default for **Case 4**.
 
 ---
 
-### 5. Optional parameter dispersion recovery
-
-A parameter-dispersion recovery step is implemented and can be enabled when needed. This mechanism is intended for difficult cases where:
-
-- the initial ensemble is strongly biased,
-- the ensemble variance collapses too early,
-- the predicted response remains inconsistent with the observation.
-
-In the present codebase, rejuvenation is **disabled by default** and is activated only when the normalized misfit exceeds a user-defined threshold.
-
----
-
-## Current Default Configuration
+## Current default configuration
 
 The main inversion script defines an `EnKFConfig` dataclass with the following defaults:
 
@@ -230,6 +197,10 @@ rtps_alpha = 0.7
 enable_rejuvenation = False
 rejuv_threshold = 1.5
 rejuv_scale_max = 3.0
+use_perturbed_obs = True
+total_time = 1.2e-5
+obs_start_time = 1.0e-5
+obs_time_step = 1.0e-6
 ```
 
 ### Interpretation of `pred_idx`
@@ -242,7 +213,50 @@ The parameter indices correspond to entries in the material vector:
 
 ---
 
-## LS-DYNA Utilities
+## Paper Case 1–4 settings
+
+The repository now supports direct switching among the four published HVI cases through. The **default runtime case is now `case1`**, and `terminal.txt` is written with line-by-line timestamps:
+
+```bash
+python hvi_enkf_main.py --case case1
+python hvi_enkf_main.py --case case2
+python hvi_enkf_main.py --case case3
+python hvi_enkf_main.py --case case1
+```
+
+The case definitions are:
+
+- **Case 1**: under-biased initial guess  
+  $$
+  \mathbf{u}_0 = 0.75\,\mathbf{u}_{true}, \qquad N_o = 20
+  $$
+
+- **Case 2**: over-biased initial guess  
+  $$
+  \mathbf{u}_0 = 1.25\,\mathbf{u}_{true}, \qquad N_o = 20
+  $$
+
+- **Case 3**: limited observations  
+  $$
+  \mathbf{u}_0 = 0.75\,\mathbf{u}_{true}, \qquad N_o = 10
+  $$
+
+- **Case 4**: strongly biased initial guess  
+  $$
+  \mathbf{u}_0 = 2.5\,\mathbf{u}_{true}, \qquad N_o = 20
+  $$
+
+In the current implementation:
+
+- `--case case3` changes the observation dimension to 10 nodes per selected time,
+- `--case case4` enables rejuvenation by default,
+- you may override rejuvenation behavior with:
+  - `--enable-rejuvenation`
+  - `--disable-rejuvenation`
+
+---
+
+## LS-DYNA utilities
 
 The module `lsdyna_io.py` provides reusable helper functions:
 
@@ -255,7 +269,7 @@ This modular split keeps LS-DYNA-specific I/O outside the EnKF driver and makes 
 
 ---
 
-## Robust Keyword-File Parameter Update
+## Robust keyword-file parameter update
 
 Material parameters in the LS-DYNA keyword file are updated by **parameter-name matching**, not by fixed line numbers.
 
@@ -267,20 +281,11 @@ For example, the updater searches for labels such as:
 
 and replaces only the matched entries.
 
-### Why this matters
-
-A line-number-based updater is fragile and can fail when:
-
-- comments are added,
-- blank lines are inserted,
-- the file header changes,
-- formatting is modified.
-
-By-name replacement is significantly more robust for long-term code maintenance.
+This makes the update logic more robust to comments, blank lines, and minor formatting changes in `Run.k`.
 
 ---
 
-## Robust `nodout` Parsing
+## Robust `nodout` parsing
 
 Observation extraction is implemented using **header-driven parsing**, not fixed line offsets.
 
@@ -298,35 +303,30 @@ For each selected time step, the parser:
 4. parses the requested field,
 5. assembles the flattened observation vector.
 
-### Advantages of this approach
-
-This strategy is much more robust when:
-
-- the nodset size changes,
-- the number of printed nodes changes,
-- LS-DYNA output formatting shifts,
-- additional lines appear between output blocks.
+The current implementation computes the target time-step indices from the physical-time settings (`total_time`, `obs_start_time`, `obs_time_step`) so that the new parser remains consistent with the original script's extraction logic.
 
 ---
 
-## Observation Preparation
+## Observation preparation
 
 Before running the EnKF inversion, first generate the synthetic observation from the baseline keyword file.
 
-### Default command
+### Standard Case 1 / 2 / 4 observation
 
 ```bash
-python prepare_observation.py --baseline-k Run.k
+python prepare_observation.py --baseline-k Run.k --case case1
 ```
 
-### Equivalent explicit Windows command
+or
 
 ```bash
-python prepare_observation.py ^
-  --project-root . ^
-  --baseline-k Run.k ^
-  --lsdyna-bat "C:\Program Files\ANSYS Inc\v251\ansys\bin\winx64\lsprepost412\LS-Run\lsdynamsvar.bat" ^
-  --lsdyna-solver "C:\Program Files\ANSYS Inc\v251\ansys\bin\winx64\lsdyna_dp.exe"
+python prepare_observation.py --baseline-k Run.k --case case4
+```
+
+### Reduced-data Case 3 observation
+
+```bash
+python prepare_observation.py --baseline-k Run.k --case case3
 ```
 
 This generates:
@@ -335,52 +335,74 @@ This generates:
 Observation/z_displ_true_array.txt
 ```
 
-The script works by:
-
-1. copying `Run.k` into `Observation/baseline_run/`,
-2. launching LS-DYNA for the baseline simulation,
-3. reading the resulting `nodout`,
-4. extracting the observation vector,
-5. writing the vector to the `Observation/` directory.
+Important: if you switch between `case1/case2/case4` and `case3`, regenerate the observation file so that its length matches the expected observation dimension.
 
 ---
 
-## Running the Inversion
+## Running the inversion
 
 ### Default command
 
 ```bash
-python hvi_enkf_main.py
+python hvi_enkf_main.py --case case4
 ```
 
-### Equivalent explicit Windows command
+### Other cases
+
+```bash
+python hvi_enkf_main.py --case case1
+python hvi_enkf_main.py --case case2
+python hvi_enkf_main.py --case case3
+```
+
+### Example with explicit Windows paths
 
 ```bash
 python hvi_enkf_main.py ^
   --project-root . ^
+  --case case1 ^
   --lsdyna-bat "C:\Program Files\ANSYS Inc\v251\ansys\bin\winx64\lsprepost412\LS-Run\lsdynamsvar.bat" ^
   --lsdyna-solver "C:\Program Files\ANSYS Inc\v251\ansys\bin\winx64\lsdyna_dp.exe"
 ```
 
 ---
 
-## Platform Notes
+## History outputs
+
+To remain consistent with the older internal script, the current implementation writes runtime diagnostics to:
+
+```text
+history_value/
+```
+
+Typical files include:
+
+- `corr_history.csv`
+- `alpha_history.csv`
+- `X_f_XX.csv`
+- `Pxx_XX.csv`
+- `K_XX.csv`
+- `X_a_XX.csv`
+- `innovation_XX.csv`
+- `residual_XX.csv`
+- `misfit_XX.csv`
+
+These files are useful for diagnosing filter behavior, parameter sensitivity, and convergence.
+
+---
+
+## Platform notes
 
 The provided LS-DYNA launcher is currently configured for **Windows** execution, using:
 
 - an LS-Run environment batch file (`--lsdyna-bat`),
 - a Windows LS-DYNA solver executable (`--lsdyna-solver`).
 
-If you run this repository on Linux or an HPC cluster, you will need to adapt the implementation of `run_lsdyna_solver(...)` in `lsdyna_io.py` to match your local execution environment, such as:
-
-- shell-based launch,
-- module-based launch,
-- scheduler submission,
-- containerized execution.
+If you run this repository on Linux or an HPC cluster, adapt the implementation of `run_lsdyna_solver(...)` in `lsdyna_io.py` to match your local execution environment.
 
 ---
 
-## Python Requirements
+## Python requirements
 
 Recommended environment:
 
@@ -395,42 +417,6 @@ pip install -r requirements.txt
 ```
 
 In addition, a valid LS-DYNA installation is required.
-
----
-
-## Typical Outputs
-
-A typical run generates:
-
-- `Ensemble_01/ ... Ensemble_100/`
-- ensemble-specific keyword files:
-  - `Run_ensemble_01.k`, ...
-- extracted displacement arrays:
-  - `z_disp_XX_YY.txt`
-- `ensemble_histograms.png`
-- `terminal.txt`
-
-These files are useful for diagnostics, reproducibility, and debugging.
-
----
-
-## Reproducibility Recommendations
-
-For reproducible use of this repository, it is strongly recommended to record:
-
-- LS-DYNA version,
-- operating system,
-- solver executable path,
-- ensemble size,
-- number of EnKF iterations,
-- observation noise level,
-- inflation settings,
-- rejuvenation settings,
-- baseline `Run.k`,
-- baseline `MAT.txt`,
-- generated observation file.
-
-Because LS-DYNA simulations are computationally expensive and can be environment-dependent, recording these settings is important for consistent reproduction of results.
 
 ---
 
@@ -454,20 +440,6 @@ Current limitations include:
 
 5. **Single-observable emphasis**  
    The present implementation focuses on back-face deflection. Other fields can be extracted through `extract_field_observation_array(...)`, but a full multi-observable inversion interface is not yet packaged.
-
----
-
-## Possible Extensions
-
-Future extensions may include:
-
-- assimilation of experimental 3D-DIC or DGS measurements,
-- heteroskedastic observation-noise models,
-- support for additional LS-DYNA output fields,
-- higher-dimensional parameter calibration,
-- native HPC launcher support,
-- external YAML/JSON configuration files,
-- automated diagnostics and postprocessing tools.
 
 ---
 

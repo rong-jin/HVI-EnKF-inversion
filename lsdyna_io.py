@@ -17,11 +17,7 @@ def modify_k_file_material_parameters(
     predicted_indices: Iterable[int],
     predicted_values: Iterable[str],
 ) -> None:
-    """Update selected material parameters in a LS-DYNA .k file by parameter name.
-
-    This is robust to header/comment line count changes because it does not rely on
-    fixed line numbers.
-    """
+    """Update selected material parameters in a LS-DYNA .k file by parameter name."""
     labels = ["RA1", "RB1", "Rn1", "RC1", "Rm1", "RD11", "RD21", "RD31", "RD41", "RD51", "RCS", "RS1", "RG", "RA0"]
     updates = {labels[idx]: val for idx, val in zip(predicted_indices, predicted_values)}
 
@@ -138,26 +134,58 @@ def _parse_nodout_row(line: str) -> tuple[int, list[float]] | None:
     return node_id, values[:12]
 
 
+def _resolve_time_selection(
+    n_total_steps: int,
+    *,
+    total_time: float | None,
+    start_time: float | None,
+    step_time: float | None,
+    start_step_index: int | None,
+    step_interval: int | None,
+) -> tuple[int, int]:
+    """Resolve which nodout time-step blocks to read.
+
+    If physical times are provided, mimic the legacy script logic:
+    dt = total_time / (n_total_steps - 1), then round to nearest block index.
+    """
+    if start_step_index is not None or step_interval is not None:
+        return int(start_step_index or 0), int(step_interval or 1)
+
+    if total_time is None or start_time is None or step_time is None:
+        return 0, 1
+
+    if n_total_steps <= 1:
+        dt = total_time
+    else:
+        dt = total_time / (n_total_steps - 1)
+
+    start_idx = int(round(start_time / dt))
+    step_idx = max(1, int(round(step_time / dt)))
+    return start_idx, step_idx
+
+
 def extract_z_disp_observation_array(
     nodout_file_path: str,
     out_array_file: str,
     *,
     n_step: int,
     n_extract: int,
-    start_step_index: int = 0,
-    step_interval: int = 1,
+    total_time: float | None = None,
+    start_time: float | None = None,
+    step_time: float | None = None,
+    start_step_index: int | None = None,
+    step_interval: int | None = None,
 ) -> np.ndarray:
-    """Extract flattened z-disp vector based on time-step headers, not fixed line offsets.
-
-    This is robust to nodset-size changes because each block is detected via
-    the "nodal print out for time step" header.
-    """
+    """Extract flattened z-disp vector from nodout using header-driven blocks."""
     return extract_field_observation_array(
         nodout_file_path=nodout_file_path,
         out_array_file=out_array_file,
         field="z_disp",
         n_step=n_step,
         n_extract=n_extract,
+        total_time=total_time,
+        start_time=start_time,
+        step_time=step_time,
         start_step_index=start_step_index,
         step_interval=step_interval,
     )
@@ -170,8 +198,11 @@ def extract_field_observation_array(
     field: str,
     n_step: int,
     n_extract: int,
-    start_step_index: int = 0,
-    step_interval: int = 1,
+    total_time: float | None = None,
+    start_time: float | None = None,
+    step_time: float | None = None,
+    start_step_index: int | None = None,
+    step_interval: int | None = None,
 ) -> np.ndarray:
     """Extract flattened observation vector from nodout using header-driven blocks."""
     if field not in FIELD_INDEX:
@@ -184,12 +215,27 @@ def extract_field_observation_array(
     if not step_header_idxs:
         raise ValueError("No nodal time-step blocks found in nodout.")
 
+    start_idx, stride = _resolve_time_selection(
+        len(step_header_idxs),
+        total_time=total_time,
+        start_time=start_time,
+        step_time=step_time,
+        start_step_index=start_step_index,
+        step_interval=step_interval,
+    )
+
     selected = []
     for k in range(n_step):
-        sid = start_step_index + k * step_interval
+        sid = start_idx + k * stride
         if sid >= len(step_header_idxs):
             break
         selected.append(step_header_idxs[sid])
+
+    if len(selected) != n_step:
+        raise ValueError(
+            f"Requested {n_step} time blocks but only found {len(selected)} after selection. "
+            f"start_idx={start_idx}, stride={stride}, total_blocks={len(step_header_idxs)}"
+        )
 
     values_flat: list[float] = []
     fidx = FIELD_INDEX[field]

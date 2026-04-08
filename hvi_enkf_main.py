@@ -1,7 +1,4 @@
 """Parallel LS-DYNA + EnKF inversion pipeline.
-
-Default covariance inflation is RTPS.
-Optional parameter rejuvenation can be enabled by config.
 """
 
 from __future__ import annotations
@@ -397,4 +394,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

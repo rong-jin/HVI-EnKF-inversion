@@ -23,7 +23,7 @@ This repository implements the same overall inversion structure, but the code sh
 
 - the reduced inversion targets the three-parameter set $[C,\;D4,\;\gamma_0]$,
 - the forward model extracts back-face `z_disp` from `nodout`,
-- the default observation times correspond to **10.0, 11.0, and 12.0 **$\mu$s,
+- the default observation times correspond to **10.0, 11.0, and 12.0 μs**,
 - the code now supports **paper-style Case 1–4 switching** through a `--case` argument,
 - the history outputs written by the older internal script are restored under `history_value/`.
 

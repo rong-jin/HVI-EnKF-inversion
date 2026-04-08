@@ -227,9 +227,7 @@ python hvi_enkf_main.py --case case1
 The case definitions are:
 
 **Case 1:** under-biased initial guess  
-$$
-\mathbf{u}_0 = 0.75\,\mathbf{u}_{true}, \qquad N_o = 20
-$$
+$$ \mathbf{u}_0 = 0.75\,\mathbf{u}_{true}, \qquad N_o = 20 $$
 
 **Case 2:** over-biased initial guess  
 $$

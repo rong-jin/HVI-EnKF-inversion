@@ -61,7 +61,7 @@ class Tee:
         self._file.close()
 
 class EnKFConfig:
-    n_iter: int = 20
+    n_iter: int = 5
     n_ens: int = 100
     n_step: int = 3
     n_obs: int = 20
@@ -85,8 +85,9 @@ class EnKFConfig:
 
 
 def get_case_settings(case_name: str, true_params: np.ndarray) -> dict[str, object]:
-    """Return paper-aligned case settings."""
+    """Return case settings aligned with the paper."""
     case_key = case_name.lower()
+
     if case_key == "case1":
         factor, n_obs, rejuvenation = 0.75, 20, False
         description = "Case 1: under-biased initial guess, u0 = 0.75 * u_true, N_o = 20"
@@ -110,7 +111,6 @@ def get_case_settings(case_name: str, true_params: np.ndarray) -> dict[str, obje
         "n_obs": n_obs,
         "enable_rejuvenation": rejuvenation,
     }
-
 
 def apply_covariance_inflation(
     x_f: np.ndarray,
@@ -166,6 +166,46 @@ def apply_parameter_dispersion_recovery(
         out[:, parameter_cols[jj]] = np.clip(out[:, parameter_cols[jj]], lo, hi)
     return out
 
+def build_initial_ensemble(
+    *,
+    case_name: str,
+    init_guess: dict[int, float],
+    true_pars: np.ndarray,
+    pred_idx: tuple[int, ...],
+    n_ens: int,
+    bounds: dict[int, tuple[float, float]],
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """
+    Mixed initialization rule:
+      - case1/case2/case3: mean = factor * true, sigma = 0.1 * true   (legacy 0613 style)
+      - case4: keep current hvi_enkf_main.py logic
+    """
+    n_par = len(pred_idx)
+    ens_mean = np.array([init_guess[i] for i in pred_idx], dtype=float)
+    ens_params_full = np.empty((n_ens, n_par), dtype=float)
+
+    if case_name in {"case1", "case2", "case3"}:
+        ens_scale = 0.10
+        for j, idx in enumerate(pred_idx):
+            ens_params_full[:, j] = ens_mean[j] + rng.normal(
+                0.0,
+                abs(true_pars[idx]) * ens_scale,
+                n_ens,
+            )
+        return ens_params_full
+
+    if case_name == "case4":
+        cv_target = np.array([0.0617, 0.0784, 0.0823], dtype=float)
+        for j, idx in enumerate(pred_idx):
+            sigma0 = abs(ens_mean[j]) * cv_target[j]
+            ens_params_full[:, j] = np.clip(
+                ens_mean[j] + rng.normal(0.0, sigma0, n_ens),
+                *bounds[idx],
+            )
+        return ens_params_full
+
+    raise ValueError(f"Unsupported case_name: {case_name}")
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run parallel LS-DYNA + EnKF inversion")
@@ -211,19 +251,23 @@ def main() -> None:
 
         bounds = {3: (1e-8, 1e-1), 8: (1e-8, 5.0), 12: (1e-8, 10.0)}
         init_guess = case_settings["init_guess"]
-        cv_target = np.array([0.0617, 0.0784, 0.0823], dtype=float)
 
         n_par = len(cfg.pred_idx)
         param_cols = np.array([-n_par, -n_par + 1, -1], dtype=int)
 
-        ens_mean = np.array([init_guess[i] for i in cfg.pred_idx], dtype=float)
-        ens_params_full = np.empty((cfg.n_ens, n_par), dtype=float)
-        for j, idx in enumerate(cfg.pred_idx):
-            sigma0 = abs(ens_mean[j]) * cv_target[j]
-            ens_params_full[:, j] = np.clip(
-                ens_mean[j] + rng.normal(0.0, sigma0, cfg.n_ens),
-                *bounds[idx],
-            )
+        ens_params_full = build_initial_ensemble(
+            case_name=case_settings["case_name"],
+            init_guess=init_guess,
+            true_pars=true_pars,
+            pred_idx=cfg.pred_idx,
+            n_ens=cfg.n_ens,
+            bounds=bounds,
+            rng=rng,
+        )
+
+        print(f"Initial ensemble mode for {case_settings['case_name']}")
+        print("Initial ensemble sample mean:", np.mean(ens_params_full, axis=0))
+        print("Initial ensemble sample std :", np.std(ens_params_full, axis=0, ddof=1))
 
         fig = plt.figure(figsize=(3 * n_par, 3))
         for k, idx in enumerate(cfg.pred_idx):
@@ -247,11 +291,20 @@ def main() -> None:
                 [f"{ens_params_full[eid-1, j]:.3e}" for j in range(n_par)],
             )
 
-        obs_mean = np.loadtxt(obs_path, delimiter=",") - 1e-4
-        assert obs_mean.size == cfg.n_step * n_obs, (
-            f"Observation length mismatch: expected {cfg.n_step * n_obs}, got {obs_mean.size}. "
-            "Regenerate Observation/z_displ_true_array.txt for the selected case."
-        )
+        obs_raw = np.loadtxt(obs_path, delimiter=",") - 1e-4
+
+        if obs_raw.size == cfg.n_step * cfg.n_obs:
+            # master file with 20 observations per time step; slice for case3
+            obs_full = obs_raw.reshape(cfg.n_step, cfg.n_obs)
+            obs_mean = obs_full[:, :n_obs].reshape(-1)
+        elif obs_raw.size == cfg.n_step * n_obs:
+            # already case-specific
+            obs_mean = obs_raw.reshape(-1)
+        else:
+            raise ValueError(
+                f"Observation length mismatch: got {obs_raw.size}, "
+                f"expected either {cfg.n_step * cfg.n_obs} or {cfg.n_step * n_obs}."
+            )
 
         h = np.zeros((cfg.n_step * n_obs, cfg.n_step * cfg.n_pts + n_par))
         for k in range(cfg.n_step):

@@ -25,8 +25,6 @@ import matplotlib.pyplot as plt
 
 
 class Tee:
-    """Duplicate stdout to file and terminal, prefixing each printed line with a timestamp."""
-
     def __init__(self, path: str, mode: str = "w", encoding: str = "utf-8") -> None:
         self._file = open(path, mode, encoding=encoding)
         self._stdout = sys.stdout
@@ -85,7 +83,6 @@ class EnKFConfig:
 
 
 def get_case_settings(case_name: str, true_params: np.ndarray) -> dict[str, object]:
-    """Return case settings aligned with the paper."""
     case_key = case_name.lower()
 
     if case_key == "case1":

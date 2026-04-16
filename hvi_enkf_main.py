@@ -69,7 +69,7 @@ class EnKFConfig:
     lsdyna_ncpu: int = 1
     lsdyna_memory: str = "256m"
     sigma_obs: float = 1e-3
-    seed: int = 42
+    seed: int = 2026
     timeout_sec: int = 3000
     inflation_method: str = "rtps"  # rtps | none
     rtps_alpha: float = 0.7

@@ -1,5 +1,29 @@
 $# LS-DYNA Keyword file created by LS-PrePost(R) XXXX RX (vX.XX.X)
 $# Created on XXX-XX-XXXX (XX:XX:XX)
+$===============================================================================
+$ Unit system used in this LS-DYNA model
+$===============================================================================
+$ This model uses a consistent g-cm-s unit system.
+$
+$ Base units:
+$   Mass        = g
+$   Length      = cm
+$   Time        = s
+$
+$ Derived units:
+$   Force       = dyne      = g*cm/s^2
+$   Stress      = dyne/cm^2
+$   Energy      = erg       = dyne*cm
+$
+$ Example values in this unit system:
+$   Density     = 7.83E+00   g/cm^3
+$   Young's E   = 2.07E+12   dyne/cm^2
+$   Velocity    = 1.56E+03   cm/s
+$   Gravity     = 9.806E+02  cm/s^2
+$
+$ All material parameters, EOS parameters, loads, velocities, and database outputs
+$ should be interpreted consistently in the g-cm-s unit system.
+$===============================================================================
 *KEYWORD
 *PARAMETER
 $#   prmr1      val1     prmr2      val2     prmr3      val3     prmr4      val4

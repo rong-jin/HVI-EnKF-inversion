@@ -115,7 +115,7 @@ The parser computes the corresponding `nodout` block indices automatically from 
   Main EnKF inversion driver. Handles ensemble initialization, paper-case selection, parallel forward simulation, EnKF update, covariance inflation, optional rejuvenation, history output, and iterative rewriting of posterior parameters to ensemble-specific `.k` files.
 
 - **`lsdyna_io.py`**  
-  External callable utilities for LS-DYNA I/O, including keyword-file parameter replacement, solver invocation, and robust `nodout` parsing.
+  External callable utilities for LS-DYNA I/O, including keyword-file parameter replacement, solver invocation, and `nodout` parsing.
 
 - **`prepare_observation.py`**  
   Utility script that runs a baseline LS-DYNA simulation and generates the synthetic observation file used by the EnKF workflow.
@@ -270,7 +270,7 @@ This modular split keeps LS-DYNA-specific I/O outside the EnKF driver and makes 
 
 ---
 
-## Robust keyword-file parameter update
+## keyword-file parameter update
 
 Material parameters in the LS-DYNA keyword file are updated by **parameter-name matching**, not by fixed line numbers.
 
@@ -286,7 +286,7 @@ This makes the update logic more robust to comments, blank lines, and minor form
 
 ---
 
-## Robust `nodout` parsing
+## `nodout` parsing
 
 Observation extraction is implemented using **header-driven parsing**, not fixed line offsets.
 

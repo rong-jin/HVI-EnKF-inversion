@@ -24,11 +24,6 @@ $
 $ All material parameters, EOS parameters, loads, velocities, and database outputs
 $ should be interpreted consistently in the g-cm-s unit system.
 $===============================================================================
-*KEYWORD
-$===============================================================================
-*TITLE
-$#                                                                         title
-HVI-EnKF
 *PARAMETER
 $#   prmr1      val1     prmr2      val2     prmr3      val3     prmr4      val4
 RA1,2251710e3                                                           
@@ -49,7 +44,7 @@ RT,1.2E-5
 $===============================================================================
 *CONTROL_CONTACT
 $#  slsfac    rwpnal    islchk    shlthk    penopt    thkchg     orien    enmass
-       0.0       0.0         0         0         0         0         0         0
+       1.0       0.0         0         0         0         0         0         0
 $#  usrstr    usrfrc     nsbcs    interm     xpene     ssthk      ecdt   tiedprj
          0         0         0         0       0.0         0         0         0
 $#   sfric     dfric       edc       vfc        th     th_sf    pen_sf     ptscl
@@ -57,17 +52,17 @@ $#   sfric     dfric       edc       vfc        th     th_sf    pen_sf     ptscl
 $#  ignore    frceng   skiprwg    outseg   spotstp   spotdel   spothin   dir_tie
          0         0         0         0         0         0       0.0         0
 $#    isym    nserod    rwgaps    rwgdth     rwksf      icov    swradf    ithoff
-         0         0         1       0.0       0.0         0       0.0         0
+         0         0         1       0.0       1.0         0       0.0         0
 $#  shledg    pstiff    ithcnt    tdcnof     ftall    unused    shltrw    igactc
          0         0         0         0         0                 0.0         0
 $===============================================================================
 *CONTROL_ENERGY
 $#    hgen      rwen    slnten     rylen     irgen     maten     drlen     disen
-         0         0         0         0         0         0         0         0
+         2         2         2         2         2         1         1         1
 $===============================================================================
 *CONTROL_SOLUTION
 $#    soln       nlq     isnan     lcint     lcacc     ncdcf    nocopy      crvp
-         0         0         0         0         0         0         0         0
+         0         0         0       100         0         1         0         0
 $===============================================================================
 *CONTROL_SPH
 $#    ncbs     boxid        dt      idim   nmneigh      form     start      maxv
@@ -75,13 +70,13 @@ $#    ncbs     boxid        dt      idim   nmneigh      form     start      maxv
 $===============================================================================
 *CONTROL_TERMINATION
 $#  endtim    endcyc     dtmin    endeng    endmas     nosol
-&t                 0       0.0       0.0       0.0         0
+&t            600000       0.0       0.0       0.0         0
 $===============================================================================
 $ OUTPUT
 $===============================================================================
 *CONTROL_TIMESTEP
 $#  dtinit    tssfac      isdo    tslimt     dt2ms      lctm     erode     ms1st
-1.0000E-12       0.0         0       0.0       0.0         0         0         0
+1.0000E-12       0.5         0       0.0       0.0         0         0         0
 *DATABASE_GLSTAT
 $#      dt    binary      lcur     ioopt
 1.00000E-7         1         0         1
@@ -97,7 +92,7 @@ $#      dt      lcdt      beam     npltc    psetid
 $===============================================================================
 *DATABASE_EXTENT_BINARY
 $#   neiph     neips    maxint    strflg    sigflg    epsflg    rltflg    engflg
-         0         0         0         1         1         1         1         1
+         6         0         0         1         1         1         1         1
 $#  cmpflg    ieverp    beamip     dcomp      shge     stssz    n3thdt   ialemat
          0         0         0         1         1         1         2         0
 $# nintsld   pkp_sen      sclp     hydro     msscl     therm    intout    nodout
@@ -107,35 +102,37 @@ $#    dtdt    resplt     neipb   quadsld    cubsld   deleres
 $===============================================================================
 *DATABASE_HISTORY_NODE_SET
 $#     id1       id2       id3       id4       id5       id6       id7       id8
-         2         0         0         0         0         0         0         0
+         1         0         0         0         0         0         0         0
 *MAT_JOHNSON_COOK_TITLE
+J-C for sph
 $#     mid        ro         g         e        pr       dtf        vp    rateop
-         2        0          0         0       0.0       0.0       0.0       0.0
+         3      1.77   1.70E11   4.50E11      0.35       0.0       1.0       0.0
 $#       a         b         n         c         m        tm        tr      epso
        &a1       &b1       &n1       &c1       &m1     905.0     298.0     0.001
 $#      cp        pc     spall        it        d1        d2        d3        d4
-         0       0.0       0.0       0.0      &d11      &d21      &d31      &d41      
+1.750000E7       0.0       0.0       0.0      &d11      &d21      &d31      &d41      
 $#      d5c2/p/xnp/d      erod     efmin    numint         k      eps1
 &d51             0.0       0.0       0.0       0.0       0.0       0.0
 *MAT_JOHNSON_COOK_TITLE
-$#     id1       id2       id3       id4       id5       id6       id7       id8
-         1         0         0         0         0         0         0         0
+Ball_material
+$#     mid        ro         g         e        pr       dtf        vp    rateop
+         5      7.85   8.20E11   2.10E12      0.28       0.0       0.0       0.0
 $#       a         b         n         c         m        tm        tr      epso
-       0.0       0.0       0.0       0.0       0.0       0.0       0.0       0.0
+  1.035E10    1.90E9       0.3     0.016       4.5    1168.0     298.0    5.0E-4
 $#      cp        pc     spall        it        d1        d2        d3        d4
-       0.0       0.0       0.0       0.0       0.0       0.0       0.0       0.0
+4.600000E9       0.0       2.0       0.0    0.1133      2.11     -1.65    0.9768
 $#      d5c2/p/xnp/d      erod     efmin    numint         k      eps1
-       0.0       0.0       0.0       0.0       0.0       0.0       0.0
+    0.9768       0.0       0.0    1.0E-6       0.0       0.0       0.0
 $===============================================================================
 $ INITIAL / CONTROL SETTINGS
 $===============================================================================
 *MAT_THERMAL_ISOTROPIC
 $  TMID  TRO  TGRLC  TGMULT  TLAT  HLAT
 $#    tmid        ro     tgrlc    tgmult      tlat      hlat
-         1       0.0       0.0       0.0       0.0       0.0
+         1       0.0       0.0       0.0     905.03.770000E9
 $  HC  TC
 $#      hc        tc
-       0.0         0
+1.050000E7   8000000
 $===============================================================================
 *INITIAL_TEMPERATURE_SET
 $#    nsid      temp       loc
@@ -143,17 +140,17 @@ $#    nsid      temp       loc
 $===============================================================================
 *INITIAL_VELOCITY_GENERATION
 $#      id      styp     omega        vx        vy        vz     ivatn      icid
-         0       0.0       0.0       0.0       0.0       0.0       0.0       0.0
+         1         2       0.0       0.0       0.0 -120000.0         0         0
 $#      xc        yc        zc        nx        ny        nz     phase    irigid
        0.0       0.0       0.0       0.0       0.0       0.0         0         0
 *EOS_LINEAR_POLYNOMIAL
 $#   eosid        c0        c1        c2        c3        c4        c5        c6
-         1       0.0       0.0       0.0       0.0       0.0       0.0       0.0
+         1       0.0   1.66E11       0.0       0.0       0.0       0.0       0.0
 $#      e0        v0
        0.0       1.0
 *EOS_GRUNEISEN
 $#   eosid         c        s1        s2        s3    gamma0         a        e0
-         2       &cs       &s1       0.0       0.0        &g       &a0      0.0
+         2       &cs       &s1       0.0       0.0        &g       &a0       0.0
 $V0
 $#      v0    unused      lcid
        1.0                   0
@@ -169,22 +166,30 @@ $#   nid               x               y               z      tc      rc
        1               0               0               0       0       0
 $===============================================================================
 *PART
-$# title
+$#                                                                         title
 Projectile
 $#     pid     secid       mid     eosid      hgid      grav    adpopt      tmid
-         1         1         1         1         0         0         0         0
+         1         1         5         1         0         0         0         0
 *SECTION_SPH_TITLE
 sph
 $#   secid      cslh      hmin      hmax    sphini     death     start   sphkern
-         1       1.2       0.2       2.0       0.0    1.0E20       0.0         0
+         1       1.3       0.2       2.0       0.01.00000E20       0.0         0
 *PART
 $#                                                                         title
 Target
 $#     pid     secid       mid     eosid      hgid      grav    adpopt      tmid
-   5000001         1         2         2         0         0         0         1
+   5000001         1         3         2         0         0         0         1
 $===============================================================================
 *SET_NODE_LIST
 $#     sid       da1       da2       da3       da4    solver       its         -
          1       0.0       0.0       0.0       0.0MECH               1          
 $#    nid1      nid2      nid3      nid4      nid5      nid6      nid7      nid8
+   5160273   5163269   5166265   5169261   5172257   5175253   5178249   5181245
+   5184241   5187237   5190233   5193229   5196225   5199221   5202217   5205213
+   5208209   5211205   5214201   5217197   5220193   5223189   5226185   5229181
+   5232177   5235173   5238169   5241165   5244161   5247157   5250153   5253149
+   5256145   5259141   5262137   5265133   5268129   5271125   5274121   5277117
+   5280113   5283109   5286105   5289101   5292097   5295093   5298089   5301085
+   5304081   5307077   5310073   5313069   5316065   5319061         0         0
+$===============================================================================
 *END
